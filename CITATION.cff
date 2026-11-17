@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "Please cite the associated ORBIT paper and identify this software version when using the detector."
+type: software
+title: "PFT RSO Detection"
+version: 0.1.0
+authors:
+  - family-names: Sanvido
+    given-names: Aiden
+abstract: "Standalone packaging of the supplied ModifiedPFT detector, with documented frame alignment and association corrections. Original script credited to Aiden Sanvido (2023-07)."
+preferred-citation:
+  type: conference-paper
+  title: "ORBIT: Open-Source Research for Better Identification and Tracking of Space Objects"
+  authors:
+    - family-names: Suthakar
+      given-names: Vithurshan
+    - family-names: Vellani
+      given-names: Mishal
+    - family-names: Brown
+      given-names: Emilee
+    - family-names: Sanvido
+      given-names: Aiden
+    - family-names: Lee
+      given-names: "Regina S.K."
+  collection-title: "18th International Conference on Space Operations"
+  year: 2025
+  month: 5
+  start: 1
+  end: 11
+  notes: "SpaceOps-2025, paper ID 509; Montreal, Canada; 26-30 May 2025."
+
