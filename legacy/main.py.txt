@@ -1,0 +1,357 @@
+# This program is a proximity filtering and tracking algorithm that identifies moving RSOs
+# Created by Aiden Sanvido (2023-07)
+
+# ----- Libraries -----
+import math, os, cv2, time, csv, numpy as np
+
+# ----- Functions -----
+
+def load_sequence():
+    # Loads a sequence of frames from the input folder
+
+    sequence = []
+
+    file_path = 'input'
+
+    # Iterates through each file in the 'input' directory
+    for file_name in os.listdir(file_path):
+        # Loads each frame into the sequence
+        frame = cv2.imread(os.path.join(file_path, file_name))
+
+        normalized_frame = cv2.normalize(frame, 0, 255, norm_type=cv2.NORM_MINMAX)
+        ret, thresholded_frame = cv2.threshold(normalized_frame, 1, 255, cv2.THRESH_BINARY)
+        sequence.append(thresholded_frame)
+
+    return sequence
+
+def identify_rsos(differenced_sequence, all_median_framed_contours):
+
+    object_list = []
+    star_list = []
+
+    obj_id = 0
+
+    # Detects resident space objects in a given sequence of differenced frames
+    prev_objs = []
+    new_objs = []
+
+    prev_stars = []
+    new_stars = []
+
+    # Padding between the center of each RSO and their respective bounding box in pixels
+    padding = 5
+
+    # Iterates through each frame in given sequence
+    for frame_count, frame in enumerate(differenced_sequence):
+
+        object_id = 0
+
+        original_frame = frame.copy()
+
+        # Detects contours formed by frame differencing
+        contours, hierarchy = cv2.findContours(frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Iterates through each contour detected in the current frame
+        for contour in contours:
+
+            # Filters out objects with an area greater than 50 pixels
+            if cv2.contourArea(contour) < 50 and cv2.contourArea(contour) > -1:
+
+                # Determines the bounding box of each detected RSO
+                x, y, w, h = cv2.boundingRect(contour)
+
+                center_x = int((x + x + w) / 2)
+                center_y = int((y + y + h) / 2)
+
+                rso = True
+
+                # Filters out objects within proximity of any contours detected in the median frame (proximity filtering)
+                for detection in all_median_framed_contours[frame_count]:
+                    x2, y2, w2, h2 = cv2.boundingRect(detection)
+
+                    center_x2 = int((x2 + x2 + w2) / 2)
+                    center_y2 = int((y2 + y2 + h2) / 2)
+
+                    # Checks distance in pixels between contours in current frame and median frame
+                    if math.dist((center_x, center_y), (center_x2, center_y2)) < 6:
+                        rso = False
+
+                # Tracks RSOs with a unique numerical ID across the sequence
+                if rso:
+
+                    if frame_count > 1:
+
+                        # Finds which objects are closest in the previous frame to the current object selected
+                        obj_dist_hierarchy = []
+
+                        for obj in prev_objs:
+                            dist = math.dist([obj[1], obj[2]], [center_x, center_y])
+
+                            # Average distance, object ID
+                            obj_dist_hierarchy.append([dist, obj[0]])
+
+                        if len(obj_dist_hierarchy) > 0:
+
+                            obj_dist_hierarchy.sort()
+
+                            # Checks if the average distance of the closest object in the previous frame is below a thresholded distance (e.g. 10)
+                            if obj_dist_hierarchy[0][0] < 20:
+
+                                # Updates moving object in current frame, and removes the object from the list of possible objects to compare to in previous frame
+
+                                # ID of closest object, center_x, center_y, frame count
+                                new_objs.append([obj_dist_hierarchy[0][1], center_x, center_y, frame_count])
+
+                                # Slow, temporary solution that removes the selected object from the list of objects in the previous frame so that two objects cant be tagged with the same ID
+                                for obj in prev_objs:
+                                    if obj[0] == obj_dist_hierarchy[0][1]:
+                                        prev_objs.remove(obj)
+                                        break
+
+                            # If the object is too far away, apply new ID
+                            else:
+
+                                obj_id += 1
+                                new_objs.append([obj_id, center_x, center_y, frame_count])
+
+                        # If object has no other objects to compare to, apply new ID
+                        else:
+
+                            obj_id += 1
+                            new_objs.append([obj_id, center_x, center_y, frame_count])
+
+                        # If its the first frame in a sequence, apply unique ID to each object
+                    else:
+
+                        obj_id += 1
+                        new_objs.append([obj_id, center_x, center_y, frame_count])
+
+                else:
+
+                    if frame_count > 1:
+
+                        # Finds which objects are closest in the previous frame to the current object selected
+                        star_dist_hierarchy = []
+
+                        for star in prev_stars:
+                            dist = math.dist([star[1], star[2]], [center_x, center_y])
+
+                            # Average distance, object ID
+                            star_dist_hierarchy.append([dist, star[0]])
+
+                        if len(star_dist_hierarchy) > 0:
+
+                            star_dist_hierarchy.sort()
+
+                            # Checks if the average distance of the closest object in the previous frame is below a thresholded distance (e.g. 10)
+                            if star_dist_hierarchy[0][0] < 5:
+
+                                # Updates moving object in current frame, and removes the object from the list of possible objects to compare to in previous frame
+
+                                # ID of closest object, center_x, center_y, frame count
+                                new_stars.append([star_dist_hierarchy[0][1], center_x, center_y, frame_count])
+
+                                # Slow, temporary solution that removes the selected object from the list of objects in the previous frame so that two objects cant be tagged with the same ID
+                                for obj in prev_objs:
+                                    if obj[0] == star_dist_hierarchy[0][1]:
+                                        prev_stars.remove(obj)
+                                        break
+
+                            # If the object is too far away, apply new ID
+                            else:
+
+                                obj_id += 1
+                                new_stars.append([obj_id, center_x, center_y, frame_count])
+
+                        # If object has no other objects to compare to, apply new ID
+                        else:
+
+                            obj_id += 1
+                            new_stars.append([obj_id, center_x, center_y, frame_count])
+
+                        # If its the first frame in a sequence, apply unique ID to each object
+                    else:
+
+                        obj_id += 1
+                        new_stars.append([obj_id, center_x, center_y, frame_count])
+
+
+        prev_objs = new_objs.copy()
+        prev_stars = new_stars.copy()
+
+        # Detected RSOs are saved in a list for later access
+        for obj in new_objs:
+
+            object_list.append([obj[0], obj[1], obj[2], obj[3]])
+
+        new_objs = []
+
+        for star in new_stars:
+
+            star_list.append([star[0], star[1], star[2], star[3]])
+
+        new_stars = []
+
+    curated_list = []
+
+    # Final round of filtering to remove objects that move an insignificant distance between their first and final appearance in the sequence
+    for id in range(1, obj_id + 1):
+
+        total_objects = 0
+        temp_list = []
+
+        for obj in object_list:
+
+            if int(obj[0]) == id:
+                total_objects += 1
+                temp_list.append(obj)
+
+        if total_objects > 1:
+
+            # Checks how far each RSO has travelled over the course of the sequence
+            if math.dist((temp_list[0][1], temp_list[0][2]), (temp_list[-1][1], temp_list[-1][2])) > 8:
+                for element in temp_list:
+                    curated_list.append(element)
+            else:
+                for element in temp_list:
+                    star_list.append(element)
+
+    for obj in curated_list:
+
+        # Writes to CSV file with current frame, object id, x-coordinate, y-coordinate
+        with open('frame_data.csv', 'a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([obj[3], obj[0], obj[1], obj[2]])
+
+    for star in star_list:
+
+        with open('star_data.csv', 'a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([star[3], star[0], star[1], star[2]])
+
+
+def read_data():
+
+    star_list = []
+    object_list = []
+    count = 0
+
+    with open('frame_data.csv', 'r', newline='') as file:
+
+        for line in file:
+            obj = line.strip().split(',')
+
+            if count > 0:
+                object_list.append(obj)
+
+            count += 1
+
+    count = 0
+    with open('star_data.csv', 'r', newline='') as file:
+
+        for line in file:
+            obj = line.strip().split(',')
+
+            if count > 0:
+                star_list.append(obj)
+
+            count += 1
+
+    for frame_count, frame in enumerate(sequence):
+
+        original_frame = frame.copy()
+
+        for obj in object_list:
+
+            if int(obj[0]) == frame_count:
+
+                cv2.putText(original_frame, str(obj[1]), (int(obj[2]), int(obj[3])), cv2.FONT_HERSHEY_SIMPLEX, 2,
+                            (255, 255, 255),
+                            2, cv2.LINE_AA)
+
+        for star in star_list:
+
+            if int(star[0]) == frame_count:
+
+                cv2.putText(original_frame, str(star[1]), (int(star[2]), int(star[3])), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                            (255, 255, 255),
+                            1, cv2.LINE_AA)
+
+        # Allows user to exit live preview of annotated sequence
+        # time.sleep(0.1)
+        if cv2.waitKey(100) & 0xFF == ord('q'):
+            break
+
+        # Displays identified RSOs to the screen
+        cv2.imshow('Detected Objects', original_frame)
+
+def create_median_frame(sequence, frame_count):
+    # Constructs a median frame based on average luminance at each pixel throughout the sequence
+
+    # Creates median frame using rolling segment of frames
+    # Prevents stars from drifting in the median frame
+
+    if (len(sequence) - 1) > frame_count + 30:
+        # Creates median frame by averaging a 30 frame long segment of the main sequence
+        # Beginning of the segment is the current frame, end is current frame + 30 frames
+        median_frame = np.median(sequence[frame_count:frame_count + 30], axis=0).astype(np.uint8)
+
+    else:
+        # Creates the final segment after detecting the end of the sequence is within the next 30 frames
+        median_frame = np.median(sequence[frame_count:len(sequence) - 1], axis=0).astype(np.uint8)
+
+    return median_frame
+
+def frame_difference(sequence):
+
+    # Differences pairs of frames in a given sequence
+    differenced_sequence = []
+    all_median_frame_contours = []
+
+    median_frame = create_median_frame(sequence, 0)
+    median_frame = cv2.cvtColor(median_frame, cv2.COLOR_BGR2GRAY)
+    median_frame_contours, hierarchy = cv2.findContours(median_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    all_median_frame_contours.append(median_frame_contours)
+
+    # Iterates through each frame in the sequence
+    for frame_count in range(len(sequence)):
+
+        # Updates median frame every 30 frames
+        if frame_count % 30 == 0:
+            median_frame = create_median_frame(sequence, frame_count)
+            median_frame = cv2.cvtColor(median_frame, cv2.COLOR_BGR2GRAY)
+            median_frame_contours, hierarchy = cv2.findContours(median_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Subtracts the current and previous frame by subtracting pixel luminance
+        if frame_count > 0:
+            differenced_frame = cv2.cvtColor(sequence[frame_count], cv2.COLOR_BGR2GRAY)
+            differenced_sequence.append(differenced_frame)
+            all_median_frame_contours.append(median_frame_contours)
+
+    return differenced_sequence, all_median_frame_contours
+
+# ----- Main Thread -----
+# Creates CSV file with appropriate column headers
+with open('frame_data.csv', 'w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(['Frame', 'Object ID', 'X-Coordinate', 'Y-Coordinate'])
+
+with open('star_data.csv', 'w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(['Frame', 'Object ID', 'X-Coordinate', 'Y-Coordinate'])
+
+sequence = load_sequence()
+
+# Determine the output video's width and height
+frame_height = sequence[0].shape[0]
+frame_width = sequence[0].shape[1]
+
+# Outputs final .mp4 video file under the 'output' directory
+video_output = cv2.VideoWriter('output/video.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 10, (frame_width, frame_height))
+
+differenced_sequence, all_median_frame_contours = frame_difference(sequence)
+bounding_boxes = identify_rsos(differenced_sequence, all_median_frame_contours)
+
+read_data()
+
+cv2.destroyAllWindows()

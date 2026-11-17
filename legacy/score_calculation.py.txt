@@ -1,0 +1,91 @@
+import csv
+
+# CHECK THAT FRAMES ARE ALIGNED
+
+algorithm_data = []
+
+with open('frame_data.csv', newline='') as file:
+    reader = csv.reader(file)
+
+    for iteration, row in enumerate(reader):
+
+        if iteration > 0:
+            algorithm_data.append([int(row[0]), row[2], row[3]])
+
+truth_data = []
+
+with open('truth_data.csv', newline='') as file:
+    reader = csv.reader(file)
+
+    for iteration, row in enumerate(reader):
+
+        if iteration > 0:
+            truth_data.append([int(row[3]) - 1, row[1], row[2]])
+
+truth_data.sort()
+algorithm_data.sort()
+
+total_frames = truth_data[-1][0]
+
+total_true_positives = 0
+total_false_positives = 0
+total_false_negatives = 0
+
+threshold = 5
+current_frame = 0
+
+while current_frame < total_frames:
+
+    true_positives = 0
+
+    frame_truth_data = []
+    frame_algorithm_data = []
+
+    for element in truth_data:
+        if element[0] == current_frame:
+            frame_truth_data.append(element)
+        elif element[0] > current_frame:
+            break
+
+    for element in algorithm_data:
+        if element[0] == current_frame:
+            frame_algorithm_data.append(element)
+        elif element[0] > current_frame:
+            break
+
+    for algorithm_detection in frame_algorithm_data:
+        for true_detection in frame_truth_data:
+            x1 = float(algorithm_detection[0])
+            x2 = float(true_detection[0])
+
+            y1 = float(algorithm_detection[1])
+            y2 = float(true_detection[1])
+
+            x_dif = abs(x2 - x1)
+            y_dif = abs(y2 - y1)
+
+            if x_dif <= threshold and y_dif <= threshold:
+                true_positives += 1
+
+    false_positives = len(frame_algorithm_data) - true_positives
+    false_negatives = len(frame_truth_data) - true_positives
+
+    total_true_positives += true_positives
+    total_false_negatives += false_negatives
+    total_false_positives += false_positives
+
+    current_frame += 1
+
+print('--- Results ---')
+print("True Positives (Correctly Identified RSOs): ", total_true_positives)
+print("False Positives (Stars Detected as RSOs): ", total_false_positives)
+print("False Negatives (RSOs missed): ", total_false_negatives)
+
+precision = total_true_positives / (total_true_positives + total_false_positives)
+recall = total_true_positives / (total_true_positives + total_false_negatives)
+f1_score = (2 * precision * recall) / (precision + recall)
+
+print('\n--- Scores ---')
+print('Precision (Are They Really RSOs): ', str(round(precision * 100)) + '%')
+print('Recall (RSOs Detected Vs. Missed): ', str(round(recall * 100)) + '%')
+print('F1 Score (Combination of Above): ', str(round(f1_score * 100)) + '%')
